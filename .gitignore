@@ -1,0 +1,9 @@
+.secrets
+log.txt
+*.zip
+AnyKernel3/
+device/
+kernel/
+toolchain/
+tools/
+vendor/
