@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       clang_major:
-        description: "Alchemist LLVM Clang major version"
+        description: "Alchemist LLVM Clang major version ('latest' for newest available)"
         required: false
-        default: "23"
+        default: "latest"
         type: string
 
 concurrency:
@@ -36,9 +36,10 @@ jobs:
 
       - name: Build KernelSU-Next 6.6 Standalone
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_BUILD_CHAT_ID: ${{ secrets.TG_BUILD_CHAT_ID }}
-          CLANG_MAJOR: ${{ github.event.inputs.clang_major || '23' }}
+          CLANG_MAJOR: ${{ inputs.clang_major || 'latest' }}
         run: |
           chmod +x ./kernelsu-next-standalone-6.6.sh
           ./kernelsu-next-standalone-6.6.sh

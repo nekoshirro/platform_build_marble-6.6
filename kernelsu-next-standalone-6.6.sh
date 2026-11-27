@@ -14,8 +14,8 @@ export DEVICE_DISPLAY="Redmi Note 12 Turbo"
 export DEVICE_NAME="Redmi Note 12 Turbo"
 export KERNEL_NAME="[Re]Shinomiya"
 export ROOT_VARIANT="KernelSU-Next"
-export CLANG_MAJOR="${CLANG_MAJOR:-23}"
-export COMPILER_NAME="🧪Alchemist LLVM Clang ${CLANG_MAJOR}"
+export CLANG_MAJOR="${CLANG_MAJOR:-latest}"
+export COMPILER_NAME="🧪Alchemist LLVM Clang"
 export TZ="Asia/Jakarta"
 export ARCH="arm64"
 export SUBARCH="arm64"
@@ -194,19 +194,49 @@ sync_git_repo() {
 CLANG_DIR="$ROOT_DIR/toolchain/Alchemist-LLVM"
 mkdir -p "$ROOT_DIR/toolchain"
 
-echo "Checking latest Alchemist LLVM (Clang $CLANG_MAJOR) release from GitHub..." | tee -a "$LOG_FILE"
-LATEST_RELEASE_JSON=$(curl -sL --max-time 15 "https://api.github.com/repos/nekoshirro/Alchemist-LLVM/releases/latest" 2>/dev/null || true)
-CLANG_URL=$(echo "$LATEST_RELEASE_JSON" | jq -r ".assets[] | select((.name | startswith(\"Alchemist-LLVM-${CLANG_MAJOR}-\")) and (.name | endswith(\".tar.xz\"))) | .browser_download_url" 2>/dev/null | head -n1)
-if [ -z "$CLANG_URL" ] || [ "$CLANG_URL" = "null" ]; then
-    CLANG_URL=$(echo "$LATEST_RELEASE_JSON" | grep "browser_download_url" | grep "Alchemist-LLVM-${CLANG_MAJOR}-" | grep -o 'https://[^"]*' | head -n1)
+echo "Checking latest Alchemist LLVM (target: $CLANG_MAJOR) release from GitHub..." | tee -a "$LOG_FILE"
+GH_AUTH_ARGS=()
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+    GH_AUTH_ARGS=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+fi
+
+RELEASE_JSON=$(curl -sL --max-time 15 "${GH_AUTH_ARGS[@]+"${GH_AUTH_ARGS[@]}"}" "https://api.github.com/repos/nekoshirro/Alchemist-LLVM/releases/latest" 2>/dev/null || true)
+if ! echo "$RELEASE_JSON" | jq -e '.assets | length > 0' >/dev/null 2>&1; then
+    RELEASE_JSON=$(curl -sL --max-time 15 "${GH_AUTH_ARGS[@]+"${GH_AUTH_ARGS[@]}"}" "https://api.github.com/repos/nekoshirro/Alchemist-LLVM/releases?per_page=5" 2>/dev/null | jq -c '[.[] | select((.assets | length) > 0)][0] // empty' 2>/dev/null || true)
+fi
+
+if [ -z "$CLANG_MAJOR" ] || [ "$CLANG_MAJOR" = "latest" ]; then
+    CLANG_URL=$(echo "$RELEASE_JSON" | jq -r '
+        [ .assets[]?
+          | select(.name | test("^Alchemist-LLVM-[0-9]+-.*\\.tar\\.xz$"))
+          | { major: ((.name | capture("^Alchemist-LLVM-(?<m>[0-9]+)-").m) | tonumber), name: .name, url: .browser_download_url }
+        ] | sort_by(.major, .name) | last | .url // empty
+    ' 2>/dev/null)
+    if [ -z "$CLANG_URL" ]; then
+        CLANG_URL=$(echo "$RELEASE_JSON" | grep -oE 'https://[^"]+Alchemist-LLVM-[0-9]+-[^"]+\.tar\.xz' | sort -V | tail -n1)
+    fi
+else
+    CLANG_URL=$(echo "$RELEASE_JSON" | jq -r --arg major "$CLANG_MAJOR" '
+        [ .assets[]?
+          | select((.name | startswith("Alchemist-LLVM-" + $major + "-")) and (.name | endswith(".tar.xz")))
+        ] | sort_by(.name) | last | .browser_download_url // empty
+    ' 2>/dev/null)
+    if [ -z "$CLANG_URL" ]; then
+        CLANG_URL=$(echo "$RELEASE_JSON" | grep -oE "https://[^\"]+Alchemist-LLVM-${CLANG_MAJOR}-[^\"]+\.tar\.xz" | sort -V | tail -n1)
+    fi
 fi
 
 # Fallback to known release URL if GitHub API query fails
 if [ -z "$CLANG_URL" ] || [ "$CLANG_URL" = "null" ]; then
-    CLANG_URL="https://github.com/nekoshirro/Alchemist-LLVM/releases/download/lto-20261030/Alchemist-LLVM-${CLANG_MAJOR}-20261030.tar.xz"
+    FALLBACK_MAJOR="$CLANG_MAJOR"
+    if [ -z "$FALLBACK_MAJOR" ] || [ "$FALLBACK_MAJOR" = "latest" ]; then
+        FALLBACK_MAJOR="23"
+    fi
+    CLANG_URL="https://github.com/nekoshirro/Alchemist-LLVM/releases/download/lto-20261105/Alchemist-LLVM-${FALLBACK_MAJOR}-20261105.tar.xz"
 fi
 
 ASSET_NAME=$(basename "$CLANG_URL")
+echo "Resolved Alchemist-LLVM asset: $ASSET_NAME" | tee -a "$LOG_FILE"
 
 if [ ! -x "$CLANG_DIR/bin/clang" ] || [ ! -f "$CLANG_DIR/.asset_tag" ] || [ "$(cat "$CLANG_DIR/.asset_tag" 2>/dev/null)" != "$ASSET_NAME" ]; then
     echo "Downloading latest Alchemist-LLVM ($ASSET_NAME)..." | tee -a "$LOG_FILE"
